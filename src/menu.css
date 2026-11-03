@@ -1,0 +1,41 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;600;700;800&display=swap');
+body { font-family: 'DM Sans', sans-serif; }
+#mode-select { inset: 0; transform: none; padding: 0; border-radius: 0; text-align: left; background: linear-gradient(90deg,rgba(12,29,33,.93),rgba(12,29,33,.70) 36%,transparent 78%); overflow: auto; }
+.menu-content { width: min(510px, calc(100% - 64px)); padding: 38px 48px; }
+.brand { font-size: 15px; letter-spacing: .28em; font-weight: 700; }
+.brand span { color: #cce5aa; }
+.eyebrow { color: #b7c8ba; letter-spacing: .2em; font-size: 10px; text-transform: uppercase; margin-top: 45px; }
+#mode-select h1 { font: 600 clamp(42px,5vw,72px)/1.02 'Manrope',sans-serif; letter-spacing: -.06em; margin: 18px 0; }
+#mode-select p { max-width: 390px; font-size: 14px; line-height: 1.7; color: #c9d6d5; opacity: 1; }
+.section-label { font-size: 10px; text-transform: uppercase; letter-spacing: .18em; margin: 26px 0 12px; color: #c7d6cc; }
+.bird-options { display: grid; grid-template-columns: repeat(3,1fr); gap: 9px; }
+.bird-option { cursor: pointer; color: #e9eee8; background: #ffffff08; border: 1px solid #ffffff26; border-radius: 12px; padding: 15px 8px; text-align: left; font: inherit; }
+.bird-option svg { width: 100%; height: 42px; margin-bottom: 8px; }
+.bird-option strong,.bird-option small { display: block; margin-left: 5px; }
+.bird-option strong { font-size: 12px; }.bird-option small { font-size: 10px; color: #adc0b8; margin-top: 5px; }
+.bird-option[aria-pressed=true] { border-color: #c7e7a7; background: #c7e7a717; }
+button { transition: background .2s,border-color .2s; } button:focus-visible,select:focus-visible { outline: 3px solid #e0f7b7; outline-offset: 4px; }
+.control-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 22px 0; font-size: 12px; color: #ccd8cf; }
+.control-row select { font: inherit; color: #f4f6ed; border: 1px solid #ffffff38; background: #263a3c; border-radius: 8px; padding: 10px; }
+.menu-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+#mode-select .big-button { margin: 0; padding: 16px 10px; font-size: 13px; border: 1px solid #d2eab4; background: #d2eab4; color: #1c332b; border-radius: 8px; font-weight: 700; }
+#mode-select .secondary { background: #ffffff09; color: #f3f5ed; border-color: #ffffff40; }
+#mode-select .big-button:hover { background: #e5f6cd; color: #193325; }
+.menu-footer { margin-top: 25px; font-size: 10px; color: #97ada9; letter-spacing: .08em; }
+.preview-caption { position: absolute; right: 10%; bottom: 13%; text-align: center; font-size: 11px; letter-spacing: .2em; text-transform: uppercase; color: #fff; }
+.preview-caption strong { display: block; font-size: 25px; letter-spacing: -.02em; margin-top: 8px; }
+#message,#error,#course-result { background: #142f32eb; padding: 28px; border-radius: 16px; backdrop-filter: blur(12px); }
+#instructions { width: max-content; max-width: 80%; background: #112c32b8; border-radius: 30px; padding: 12px 22px; font-size: 12px; }
+#debug:empty,#instructions:empty { display:none; } #debug { top: 20px; left: 20px; padding: 12px; background:#142e34a8; }
+#menu-return { position:absolute;right:20px;top:60px;background:#17363ec9;color:#fff;border:1px solid #ffffff44;border-radius:8px;padding:10px 16px;cursor:pointer; }
+@media(max-width:700px) { .menu-content { padding: 24px; width:calc(100% - 48px); max-width:460px; }.eyebrow { margin-top:26px; }.preview-caption { display:none; } #mode-select { background:#102c35db; } #mode-select h1 { font-size:44px; } }
+@media(max-height:740px) { .menu-content { padding-top:22px;padding-bottom:22px; }.eyebrow {margin-top:20px;} #mode-select h1 {font-size:48px;margin:12px 0;} .section-label {margin-top:18px;} .menu-footer {margin-top:16px;} }
+
+#speed-hud { position:absolute;top:24px;left:24px;width:190px;padding:18px 20px;background:#102c36ce;border:1px solid #e3fff32b;border-radius:14px;backdrop-filter:blur(10px);text-shadow:none; }
+.hud-label {font-size:10px;letter-spacing:.18em;color:#c1d7d5;} .hud-label span {float:right;letter-spacing:0;}
+#speed-value {font:600 46px/1.2 'Manrope',sans-serif;font-variant-numeric:tabular-nums;}
+.speed-track {height:3px;background:#ffffff24;border-radius:4px;margin:8px 0 12px;overflow:hidden;} #speed-fill {height:100%;background:#c9efb1;}
+#flight-status {font-size:9px;letter-spacing:.07em;color:#bbf5df;min-height:14px;}
+.flap-charges {display:flex;gap:5px;margin:16px 0 8px;} .flap-charge {height:7px;flex:1;background:#ffffff20;border-radius:3px;}.flap-charge.available {background:#d2eab4;box-shadow:0 0 8px #d2eab422;}
+#flap-status {font-size:11px;color:#d7e4df;font-variant-numeric:tabular-nums;}
+@media(max-width:600px) {#speed-hud {top:12px;left:12px;width:150px;padding:12px;} #speed-value {font-size:34px;} #menu-return {right:12px;top:12px;font-size:10px;} }

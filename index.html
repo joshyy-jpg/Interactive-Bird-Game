@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bird Game</title>
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #000;
+        font-family: system-ui, sans-serif;
+      }
+      #app {
+        position: relative;
+        width: 100vw;
+        height: 100vh;
+      }
+      canvas#scene {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      video#webcam {
+        display: none;
+      }
+      #overlay {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        color: #fff;
+        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+      }
+      #overlay .panel {
+        pointer-events: auto;
+      }
+      #message {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        text-align: center;
+        font-size: 20px;
+        max-width: 480px;
+        line-height: 1.5;
+      }
+      #calibration-bar-track {
+        margin: 16px auto 0;
+        width: 240px;
+        height: 10px;
+        border: 1px solid #fff;
+        border-radius: 6px;
+        overflow: hidden;
+      }
+      #calibration-bar-fill {
+        height: 100%;
+        width: 0%;
+        background: #4ade80;
+        transition: width 0.1s linear;
+      }
+      #instructions {
+        position: absolute;
+        bottom: 16px;
+        left: 50%;
+        transform: translateX(-50%);
+        text-align: center;
+        font-size: 14px;
+        opacity: 0.85;
+      }
+      #debug {
+        position: absolute;
+        top: 8px;
+        left: 8px;
+        font-size: 12px;
+        font-family: ui-monospace, monospace;
+        white-space: pre;
+        background: rgba(0, 0, 0, 0.35);
+        padding: 6px 8px;
+        border-radius: 4px;
+      }
+      #error {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        text-align: center;
+        max-width: 480px;
+        font-size: 16px;
+        color: #fca5a5;
+        display: none;
+      }
+      #preview-wrap {
+        position: absolute;
+        bottom: 12px;
+        right: 12px;
+        width: 200px;
+        display: none;
+      }
+      #preview-wrap.visible {
+        display: block;
+      }
+      #preview {
+        display: block;
+        width: 100%;
+        height: auto;
+        border: 2px solid rgba(255, 255, 255, 0.7);
+        border-radius: 6px;
+        background: #111;
+      }
+      #preview-label {
+        margin-top: 4px;
+        font-size: 11px;
+        text-align: center;
+        opacity: 0.8;
+      }
+      #mode-select,
+      #course-result {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        text-align: center;
+        display: none;
+        background: rgba(0, 0, 0, 0.55);
+        padding: 28px 36px;
+        border-radius: 12px;
+      }
+      #mode-select h2,
+      #course-result h2 {
+        margin: 0 0 18px;
+        font-size: 22px;
+      }
+      .big-button {
+        display: inline-block;
+        margin: 0 8px;
+        padding: 14px 26px;
+        font-size: 16px;
+        font-family: inherit;
+        color: #fff;
+        background: #2f7a3f;
+        border: 2px solid rgba(255, 255, 255, 0.7);
+        border-radius: 8px;
+        cursor: pointer;
+      }
+      .big-button:hover {
+        background: #3d9a52;
+      }
+      .big-button.secondary {
+        background: rgba(255, 255, 255, 0.15);
+      }
+      .big-button.secondary:hover {
+        background: rgba(255, 255, 255, 0.28);
+      }
+      #mode-select p,
+      #course-result p {
+        max-width: 340px;
+        font-size: 13px;
+        opacity: 0.8;
+        margin: 10px 0 0;
+      }
+      #timer {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        display: none;
+        font-size: 20px;
+        font-family: ui-monospace, monospace;
+        background: rgba(0, 0, 0, 0.35);
+        padding: 6px 12px;
+        border-radius: 4px;
+      }
+      #course-result-time {
+        font-size: 28px;
+        margin: 6px 0;
+      }
+      #course-result-best {
+        font-size: 14px;
+        opacity: 0.85;
+        margin-bottom: 18px;
+      }
+    </style>
+    <link rel="stylesheet" href="/src/menu.css" />
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="scene"></canvas>
+      <video id="webcam" autoplay playsinline muted></video>
+      <div id="overlay">
+        <div id="message" class="panel">
+          Loading pose tracker&hellip;
+          <div id="calibration-bar-track"><div id="calibration-bar-fill"></div></div>
+        </div>
+        <div id="instructions" class="panel"></div>
+        <div id="debug" class="panel"></div>
+        <div id="speed-hud" hidden>
+          <div class="hud-label">AIRSPEED <span>m/s</span></div>
+          <div id="speed-value">12</div><div class="speed-track"><div id="speed-fill"></div></div>
+          <div id="flight-status">GLIDING</div>
+          <div class="flap-charges" aria-label="Flap energy"><i class="flap-charge"></i><i class="flap-charge"></i><i class="flap-charge"></i><i class="flap-charge"></i><i class="flap-charge"></i></div>
+          <div id="flap-status">5 / 5 flaps</div>
+        </div>
+        <div id="error" class="panel"></div>
+        <div id="preview-wrap" class="panel">
+          <canvas id="preview" width="240" height="180"></canvas>
+          <div id="preview-label">Camera &amp; tracking</div>
+        </div>
+        <div id="mode-select" class="panel">
+<div class="menu-content"><div class="brand">↗ <span>WILD</span> / WINGS</div><div class="eyebrow">An open sky. A different perspective.</div><h1>Find your wings.<br>Leave the world below.</h1><p>Drift above the forest, trace the mountain ridges, and make the sky your own.</p><div class="section-label">01 / Choose your bird</div><div class="bird-options"><button class="bird-option" data-bird="eagle" aria-pressed="true"><svg viewBox="0 0 120 50" aria-hidden="true"><path fill="#d7c6a1" d="M60 23 Q40 3 4 9 L30 24 47 30 52 39 47 46 60 42 73 46 68 39 73 30 90 24 116 9 Q80 3 60 23Z"/><ellipse cx="60" cy="23" rx="5" ry="9" fill="#f4efdf"/></svg><strong>Bald eagle</strong><small>The alpine sovereign</small></button><button class="bird-option" data-bird="pigeon" aria-pressed="false"><svg viewBox="0 0 120 50" aria-hidden="true"><path fill="#9faebe" d="M60 23 Q40 3 4 9 L30 24 47 30 52 39 47 46 60 42 73 46 68 39 73 30 90 24 116 9 Q80 3 60 23Z"/><ellipse cx="60" cy="23" rx="5" ry="9" fill="#567d79"/></svg><strong>Pigeon</strong><small>The everyday explorer</small></button><button class="bird-option" data-bird="gull" aria-pressed="false"><svg viewBox="0 0 120 50" aria-hidden="true"><path fill="#f1eee5" d="M60 23 Q40 3 4 9 L30 24 47 30 52 39 47 46 60 42 73 46 68 39 73 30 90 24 116 9 Q80 3 60 23Z"/><ellipse cx="60" cy="23" rx="5" ry="9" fill="#f4efdf"/></svg><strong>Seagull</strong><small>The coastal wanderer</small></button></div><div class="control-row"><label for="control-style">02 / Flight controls</label><select id="control-style"><option value="keyboard">Keyboard · arrow keys</option><option value="motion">Body motion · camera</option></select></div><div class="menu-actions"><button id="mode-select-free-roam" class="big-button">Free Roam ↗</button><button id="mode-select-time-trial" class="big-button secondary">Time Trial →</button></div><p>Dive for momentum. Flap for speed. Catch the glowing wind streams.</p><div class="menu-footer">ALPINE WILDERNESS &nbsp; / &nbsp; ENDLESS EXPLORATION</div></div><div class="preview-caption">Meet your flying companion<strong id="bird-name">Bald eagle</strong></div>
+        </div>
+        <button id="menu-return" class="panel" hidden>Change bird / Menu</button>
+        <div id="timer" class="panel"></div>
+        <div id="course-result" class="panel">
+          <h2 id="course-result-heading">Finished!</h2>
+          <div id="course-result-time"></div>
+          <div id="course-result-best"></div>
+          <button id="course-result-fly-again" class="big-button">Fly Again</button>
+          <button id="course-result-change-mode" class="big-button secondary">Change Mode</button>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
