@@ -125,7 +125,7 @@ function sumNearbyFeatures(x, z) {
 }
 
 // The strongest-blending safe zone covering (x, z), or null if none reaches it.
-function safeZoneInfluence(x, z, safeZones) {
+export function safeZoneInfluence(x, z, safeZones) {
   let bestBlend = 0;
   let bestTarget = 0;
   for (const zone of safeZones) {
