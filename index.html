@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Bird Game</title>
+    <title>Wild / Wings</title>
     <style>
       html, body {
         margin: 0;
@@ -128,39 +128,6 @@
         padding: 28px 36px;
         border-radius: 12px;
       }
-      #mode-select h2,
-      #course-result h2 {
-        margin: 0 0 18px;
-        font-size: 22px;
-      }
-      .big-button {
-        display: inline-block;
-        margin: 0 8px;
-        padding: 14px 26px;
-        font-size: 16px;
-        font-family: inherit;
-        color: #fff;
-        background: #2f7a3f;
-        border: 2px solid rgba(255, 255, 255, 0.7);
-        border-radius: 8px;
-        cursor: pointer;
-      }
-      .big-button:hover {
-        background: #3d9a52;
-      }
-      .big-button.secondary {
-        background: rgba(255, 255, 255, 0.15);
-      }
-      .big-button.secondary:hover {
-        background: rgba(255, 255, 255, 0.28);
-      }
-      #mode-select p,
-      #course-result p {
-        max-width: 340px;
-        font-size: 13px;
-        opacity: 0.8;
-        margin: 10px 0 0;
-      }
       #timer {
         position: absolute;
         top: 8px;
@@ -195,29 +162,77 @@
         </div>
         <div id="instructions" class="panel"></div>
         <div id="debug" class="panel"></div>
+        <div id="mode-name" hidden>Free roam</div>
+        <div id="petal-counter" hidden><span id="petal-count">00/08</span><span id="petal-label">Sky petals</span></div>
+        <div id="petal-marker" hidden aria-hidden="true"><i class="petal-pointer"></i><span id="petal-distance"></span></div>
+        <div id="petal-toast" role="status"></div>
         <div id="speed-hud" hidden>
-          <div class="hud-label">AIRSPEED <span>m/s</span></div>
-          <div id="speed-value">12</div><div class="speed-track"><div id="speed-fill"></div></div>
-          <div id="flight-status">GLIDING</div>
-          <div class="flap-charges" aria-label="Flap energy"><i class="flap-charge"></i><i class="flap-charge"></i><i class="flap-charge"></i><i class="flap-charge"></i><i class="flap-charge"></i></div>
-          <div id="flap-status">5 / 5 flaps</div>
+          <div class="speed-line"><span id="speed-value">16</span><span class="speed-unit">m/s</span></div>
+          <div id="flight-status">Gliding</div>
+          <div class="stamina-row">
+            <span id="flap-status">Stamina 100%</span>
+            <div class="stamina-track" role="progressbar" aria-label="Flap stamina" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><div id="stamina-fill"></div></div>
+          </div>
         </div>
+        <div id="tracking-status" hidden>
+          <svg viewBox="0 0 22 18" aria-hidden="true"><path d="M2 9l6 6L20 3"/></svg>
+          <span id="tracking-text">Camera tracking</span>
+        </div>
+        <div id="setup-title">Camera setup</div>
+        <button id="setup-back" class="panel cut-button outline">Back</button>
         <div id="error" class="panel"></div>
         <div id="preview-wrap" class="panel">
-          <canvas id="preview" width="240" height="180"></canvas>
+          <canvas id="preview" width="640" height="480"></canvas>
           <div id="preview-label">Camera &amp; tracking</div>
         </div>
         <div id="mode-select" class="panel">
-<div class="menu-content"><div class="brand">↗ <span>WILD</span> / WINGS</div><div class="eyebrow">An open sky. A different perspective.</div><h1>Find your wings.<br>Leave the world below.</h1><p>Drift above the forest, trace the mountain ridges, and make the sky your own.</p><div class="section-label">01 / Choose your bird</div><div class="bird-options"><button class="bird-option" data-bird="eagle" aria-pressed="true"><svg viewBox="0 0 120 50" aria-hidden="true"><path fill="#d7c6a1" d="M60 23 Q40 3 4 9 L30 24 47 30 52 39 47 46 60 42 73 46 68 39 73 30 90 24 116 9 Q80 3 60 23Z"/><ellipse cx="60" cy="23" rx="5" ry="9" fill="#f4efdf"/></svg><strong>Bald eagle</strong><small>The alpine sovereign</small></button><button class="bird-option" data-bird="pigeon" aria-pressed="false"><svg viewBox="0 0 120 50" aria-hidden="true"><path fill="#9faebe" d="M60 23 Q40 3 4 9 L30 24 47 30 52 39 47 46 60 42 73 46 68 39 73 30 90 24 116 9 Q80 3 60 23Z"/><ellipse cx="60" cy="23" rx="5" ry="9" fill="#567d79"/></svg><strong>Pigeon</strong><small>The everyday explorer</small></button><button class="bird-option" data-bird="gull" aria-pressed="false"><svg viewBox="0 0 120 50" aria-hidden="true"><path fill="#f1eee5" d="M60 23 Q40 3 4 9 L30 24 47 30 52 39 47 46 60 42 73 46 68 39 73 30 90 24 116 9 Q80 3 60 23Z"/><ellipse cx="60" cy="23" rx="5" ry="9" fill="#f4efdf"/></svg><strong>Seagull</strong><small>The coastal wanderer</small></button></div><div class="control-row"><label for="control-style">02 / Flight controls</label><select id="control-style"><option value="keyboard">Keyboard · arrow keys</option><option value="motion">Body motion · camera</option></select></div><div class="menu-actions"><button id="mode-select-free-roam" class="big-button">Free Roam ↗</button><button id="mode-select-time-trial" class="big-button secondary">Time Trial →</button></div><p>Dive for momentum. Flap for speed. Catch the glowing wind streams.</p><div class="menu-footer">ALPINE WILDERNESS &nbsp; / &nbsp; ENDLESS EXPLORATION</div></div><div class="preview-caption">Meet your flying companion<strong id="bird-name">Bald eagle</strong></div>
+          <aside class="menu-panel">
+            <div class="brand">WILD / WINGS</div>
+            <div class="brand-rule"></div>
+            <div class="section-label">Bird</div>
+            <div class="bird-options">
+              <button class="bird-option" data-bird="dove" aria-pressed="true">White dove</button>
+              <button class="bird-option" data-bird="eagle" aria-pressed="false">Bald eagle</button>
+              <button class="bird-option" data-bird="pigeon" aria-pressed="false">Pigeon</button>
+              <button class="bird-option" data-bird="gull" aria-pressed="false">Seagull</button>
+            </div>
+            <hr class="menu-divider" />
+            <div class="section-label" id="controls-heading">Controls</div>
+            <div class="segmented" role="group" aria-labelledby="controls-heading">
+              <button class="cut-button outline" data-control="motion" aria-pressed="true">Camera</button>
+              <button class="cut-button outline" data-control="keyboard" aria-pressed="false">Keyboard</button>
+            </div>
+            <hr class="menu-divider" />
+            <div class="section-label" id="mode-heading">Mode</div>
+            <div class="segmented" role="group" aria-labelledby="mode-heading">
+              <button id="mode-select-free-roam" class="cut-button outline" data-mode="freeRoam" aria-pressed="true">Free roam</button>
+              <button id="mode-select-time-trial" class="cut-button outline" data-mode="timeTrial" aria-pressed="false">Time trial</button>
+            </div>
+            <hr class="menu-divider" />
+            <button id="start-flight" class="cut-button solid menu-cta">Camera setup</button>
+            <p id="start-hint">Check your position before flying.</p>
+          </aside>
+          <div class="preview-caption" id="bird-name">White dove</div>
         </div>
-        <button id="menu-return" class="panel" hidden>Change bird / Menu</button>
+        <button id="pause-button" class="panel cut-button" hidden>Pause [Esc]</button>
+        <div id="pause-menu" class="panel" role="dialog" aria-labelledby="pause-title">
+          <h2 id="pause-title">Rest your wings</h2>
+          <div class="pause-actions">
+            <button id="pause-resume" class="cut-button solid">Resume flight</button>
+            <button id="pause-back" class="cut-button outline">Back to nest</button>
+          </div>
+          <div class="section-label">Controls</div>
+          <ul id="pause-controls"></ul>
+        </div>
         <div id="timer" class="panel"></div>
         <div id="course-result" class="panel">
           <h2 id="course-result-heading">Finished!</h2>
           <div id="course-result-time"></div>
           <div id="course-result-best"></div>
-          <button id="course-result-fly-again" class="big-button">Fly Again</button>
-          <button id="course-result-change-mode" class="big-button secondary">Change Mode</button>
+          <div class="result-actions">
+            <button id="course-result-fly-again" class="cut-button solid">Fly again</button>
+            <button id="course-result-change-mode" class="cut-button outline">Change mode</button>
+          </div>
         </div>
       </div>
     </div>

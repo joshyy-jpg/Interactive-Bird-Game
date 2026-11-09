@@ -78,6 +78,12 @@ export function resetCourseState() {
   return createCourseState();
 }
 
+/** Moves a running race's start forward, so time spent paused isn't counted. */
+export function shiftCourseStart(state, seconds) {
+  if (state.startTime == null || state.status === "finished") return state;
+  return { ...state, startTime: state.startTime + seconds };
+}
+
 /** Seconds elapsed so far (live while racing, frozen once finished). */
 export function elapsedSeconds(state, nowSeconds) {
   if (state.startTime == null) return 0;

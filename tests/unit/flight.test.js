@@ -193,33 +193,11 @@ test("a fast approach climbs higher and preserves speed through pull-up", () => 
   assert.ok(first.forwardSpeed > 31, "no instantaneous slowdown on pitch input");
   const a = advance(slow,{climbInput:1},3), b = advance(fast,{climbInput:1},3);
   assert.ok(b.position.y > a.position.y+20);
-  assert.ok(b.forwardSpeed > a.forwardSpeed+5);
+  // Momentum carries through the first part of the pull-up. (Over a longer climb
+  // a slow bird is eased back up toward cruise speed, so the gap closes.)
+  const a1 = advance(slow,{climbInput:1},1), b1 = advance(fast,{climbInput:1},1);
+  assert.ok(b1.forwardSpeed > a1.forwardSpeed+5, `${b1.forwardSpeed} vs ${a1.forwardSpeed}`);
   assert.ok(b.forwardSpeed < fast.forwardSpeed, "climbing spends momentum");
-});
-
-test("five flaps exhaust energy; cooldown blocks flaps but permits wind", () => {
-  let state = createInitialFlightState();
-  for(let i=0;i<5;i++) {
-    state = updateFlight(state,{flapImpulse:1},dt);
-    assert.equal(state.flapPower,1);
-    if(i<4) state=advance(state,{},0.3);
-  }
-  assert.equal(state.flapEnergy,0);
-  assert.equal(state.flapRecovery,3);
-  const boosted=updateFlight(state,{flapImpulse:1,windAcceleration:12},dt);
-  assert.equal(boosted.flapPower,0);
-  assert.ok(boosted.forwardSpeed > state.forwardSpeed);
-  state=advance(state,{},3.2);
-  assert.equal(state.flapRecovery,0);
-  assert.ok(state.flapEnergy >= 1);
-  assert.equal(updateFlight(state,{flapImpulse:1},dt).flapPower,1);
-  assert.equal(advance(state,{},6).flapEnergy,5);
-});
-
-test("rapid duplicate flap events cannot bypass stroke cooldown", () => {
-  const first=updateFlight(createInitialFlightState(),{flapImpulse:1},dt);
-  const second=updateFlight(first,{flapImpulse:1},dt);
-  assert.equal(second.flapEnergy,4); assert.equal(second.flapPower,0);
 });
 
 test("leaving a wind stream retains momentum and drag gradually slows it", () => {
@@ -235,10 +213,80 @@ test("ground-blocked dives cannot farm speed", () => {
   assert.ok(advance(state,{climbInput:-1},3).forwardSpeed < state.forwardSpeed);
 });
 
-test("speed and recovery behave consistently at 30 and 120 fps", () => {
-  const initial=updateFlight(createInitialFlightState(),{flapImpulse:1},dt);
-  const a=advance(initial,{climbInput:0.6},2,1/30), b=advance(initial,{climbInput:0.6},2,1/120);
-  assert.ok(Math.abs(a.forwardSpeed-b.forwardSpeed)<0.2);
-  assert.ok(Math.abs(a.position.y-b.position.y)<0.3);
-  assert.ok(Math.abs(a.flapEnergy-b.flapEnergy)<0.01);
+test("speed, altitude and stamina behave the same at 30 and 120 fps", () => {
+  const controls = { climbInput: 0.6, flapInput: 1 };
+  const a = advance(createInitialFlightState(), controls, 2, 1 / 30);
+  const b = advance(createInitialFlightState(), controls, 2, 1 / 120);
+  assert.ok(Math.abs(a.forwardSpeed - b.forwardSpeed) < 0.5, `${a.forwardSpeed} vs ${b.forwardSpeed}`);
+  assert.ok(Math.abs(a.position.y - b.position.y) < 1, `${a.position.y} vs ${b.position.y}`);
+  assert.ok(Math.abs(a.stamina - b.stamina) < 0.01);
+});
+
+// --- Easy flying: these pin the playtest requests "it should be very easy to
+// fly and gain high speed going up and down" while keeping momentum. ---
+
+test("holding climb alone always gains altitude and never stalls", () => {
+  const start = createInitialFlightState();
+  const s = advance(start, { climbInput: 1 }, 10);
+  assert.ok(s.position.y > start.position.y + 40, `climbed only ${s.position.y - start.position.y}`);
+  assert.ok(s.forwardSpeed >= FLIGHT_CONSTANTS.minSpeed);
+});
+
+test("flapping while climbing gains speed and altitude quickly", () => {
+  const start = createInitialFlightState();
+  const s = advance(start, { climbInput: 1, flapInput: 1 }, 4);
+  assert.ok(s.forwardSpeed > 35, `speed only ${s.forwardSpeed}`);
+  assert.ok(s.position.y > start.position.y + 80, `climbed only ${s.position.y - start.position.y}`);
+});
+
+test("flapping with no steering means up: it climbs and speeds up", () => {
+  const start = createInitialFlightState();
+  const s = advance(start, { flapInput: 1 }, 4);
+  assert.ok(s.position.y > start.position.y + 30, `climbed only ${s.position.y - start.position.y}`);
+  assert.ok(s.forwardSpeed > start.forwardSpeed + 15);
+});
+
+test("flapping during a dive still dives, just faster", () => {
+  const start = createInitialFlightState();
+  start.position.y = 250;
+  const plain = advance(start, { climbInput: -1 }, 3);
+  const powered = advance(start, { climbInput: -1, flapInput: 1 }, 3);
+  assert.ok(powered.position.y < start.position.y - 50);
+  assert.ok(powered.forwardSpeed > plain.forwardSpeed);
+});
+
+test("a few seconds of diving reaches high speed", () => {
+  const start = createInitialFlightState();
+  start.position.y = 250;
+  const s = advance(start, { climbInput: -1 }, 4);
+  assert.ok(s.forwardSpeed > 45, `speed only ${s.forwardSpeed}`);
+});
+
+test("pulling out of a dive turns speed into a big zoom climb", () => {
+  const start = createInitialFlightState();
+  start.position.y = 250;
+  const bottom = advance(start, { climbInput: -1 }, 4);
+  const zoom = advance(bottom, { climbInput: 1 }, 4);
+  const plainClimb = advance(createInitialFlightState(), { climbInput: 1 }, 4);
+  const zoomGain = zoom.position.y - bottom.position.y;
+  const plainGain = plainClimb.position.y - createInitialFlightState().position.y;
+  assert.ok(zoomGain > 60, `zoom climbed only ${zoomGain}`);
+  assert.ok(zoomGain > plainGain * 2, `zoom ${zoomGain} should beat a plain climb ${plainGain}`);
+});
+
+test("long flapping tires the bird: weaker but never zero, and a rest restores it", () => {
+  const tired = advance(createInitialFlightState(), { flapInput: 1 }, 10);
+  assert.equal(tired.stamina, 0);
+  assert.ok(Math.abs(tired.flapPower - FLIGHT_CONSTANTS.tiredFlapStrength) < 0.02, `tired power ${tired.flapPower}`);
+  const rested = advance(tired, {}, 4);
+  assert.equal(rested.stamina, 1);
+  assert.ok(advance(rested, { flapInput: 1 }, 1).flapPower > 0.9);
+});
+
+test("gliding with no input settles near cruise speed and sinks gently", () => {
+  const start = createInitialFlightState();
+  const s = advance(start, {}, 20);
+  assert.ok(s.forwardSpeed > 12 && s.forwardSpeed <= FLIGHT_CONSTANTS.cruiseSpeed, `speed ${s.forwardSpeed}`);
+  const drop = start.position.y - s.position.y;
+  assert.ok(drop > 0 && drop < 40, `glide dropped ${drop}`);
 });

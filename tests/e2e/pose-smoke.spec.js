@@ -23,6 +23,13 @@ const INJECT_FAKE_TRACKER = `
   })();
 `;
 
+// Picks controls and mode on the menu, then presses the start button.
+async function launch(page, { control = "keyboard", mode = "free" } = {}) {
+  await page.click(`[data-control=${control}]`);
+  await page.click(mode === "trial" ? "#mode-select-time-trial" : "#mode-select-free-roam");
+  await page.click("#start-flight");
+}
+
 function collectConsoleErrors(page) {
   const consoleErrors = [];
   page.on("console", (msg) => {
@@ -47,11 +54,12 @@ test("motion controls calibrate after choosing a bird and Free Roam moves over t
     () => window.__birdGame && window.__birdGame.state === "MODE_SELECT",
     { timeout: 15000 }
   );
-  await page.selectOption("#control-style", "motion");
   await page.click("[data-bird=pigeon]");
-  await page.click("#mode-select-free-roam");
+  await launch(page, { control: "motion" });
 
-  await page.waitForFunction(() => window.__birdGame.state === "FLYING", { timeout: 5000 });
+  await page.waitForFunction(() => window.__birdGame.state === "FLYING", { timeout: 10000 });
+  await expect(page.locator("#tracking-status")).toContainText("Camera tracking");
+  await expect(page.locator("#mode-name")).toHaveText("Free roam");
 
   // Physics is running: capture altitude, wait, confirm it changed.
   const y1 = await page.evaluate(() => window.__birdGame.flightState.position.y);
@@ -74,7 +82,7 @@ test("Time Trial mode renders checkpoints and advances progress when the bird re
     () => window.__birdGame && window.__birdGame.state === "MODE_SELECT",
     { timeout: 15000 }
   );
-  await page.click("#mode-select-time-trial");
+  await launch(page, { mode: "trial" });
   await page.waitForFunction(() => window.__birdGame.state === "FLYING", { timeout: 5000 });
 
   // Timer HUD should be visible in Time Trial.
@@ -106,15 +114,15 @@ test("Time Trial mode renders checkpoints and advances progress when the bird re
   expect(consoleErrors, `console errors: ${consoleErrors.join("\n")}`).toEqual([]);
 });
 
-for (const species of ["eagle", "pigeon", "gull"]) {
+for (const species of ["dove", "eagle", "pigeon", "gull"]) {
   test(`${species} can be previewed and flown with keyboard controls`, async ({ page }) => {
     const errors = collectConsoleErrors(page);
     await page.goto("/");
     await page.click(`[data-bird=${species}]`);
     await expect(page.locator(`[data-bird=${species}]`)).toHaveAttribute("aria-pressed", "true");
     await expect(page.locator("#mode-select")).toBeVisible();
-    if (species === "eagle") await page.screenshot({ path: "artifacts/menu.png" });
-    await page.click("#mode-select-free-roam");
+    if (species === "dove") await page.screenshot({ path: "artifacts/menu.png" });
+    await launch(page);
     await page.waitForFunction(() => window.__birdGame.state === "FLYING");
     expect(await page.evaluate(() => window.__birdGame.species)).toBe(species);
     const start = await page.evaluate(() => window.__birdGame.flightState.position.y);
@@ -122,8 +130,9 @@ for (const species of ["eagle", "pigeon", "gull"]) {
     await page.waitForTimeout(600);
     await page.keyboard.up("ArrowUp");
     expect(await page.evaluate(() => window.__birdGame.flightState.position.y)).toBeGreaterThan(start);
-    if (species === "eagle") await page.screenshot({ path: "artifacts/flight.png" });
-    await page.click("#menu-return");
+    if (species === "dove") await page.screenshot({ path: "artifacts/flight.png" });
+    await page.click("#pause-button");
+    await page.click("#pause-back");
     await expect(page.locator("#mode-select")).toBeVisible();
     expect(errors).toEqual([]);
   });
@@ -134,39 +143,145 @@ test("small screens keep selection and launch controls accessible", async ({ pag
   await page.goto("/");
   await page.click("[data-bird=gull]");
   await expect(page.locator("#mode-select-free-roam")).toBeInViewport();
-  await expect(page.locator("#control-style")).toBeInViewport();
+  await page.screenshot({ path: "artifacts/menu-small.png" });
+  await expect(page.locator("[data-control=keyboard]")).toBeInViewport();
+  await expect(page.locator("#start-flight")).toBeInViewport();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
 });
 
-test("flaps spend energy, cooldown blocks them, and wind boosts without spending energy", async ({ page }) => {
+test("holding Space flaps: speeds up, climbs, spends stamina that rests back, and wind still boosts", async ({ page }) => {
   const errors = collectConsoleErrors(page);
   await page.goto("/");
-  await page.click("#mode-select-free-roam");
+  await launch(page);
   await page.waitForFunction(() => window.__birdGame.state === "FLYING");
-  await page.evaluate(() => { window.__birdGame.flightState.position.x = 80; });
-  const initialSpeed = await page.evaluate(() => window.__birdGame.flightState.forwardSpeed);
+  await page.evaluate(() => { window.__birdGame.flightState.position.x = 80; }); // away from the first wind stream
+  const before = await page.evaluate(() => ({ ...window.__birdGame.flightState, position: { ...window.__birdGame.flightState.position } }));
   await page.keyboard.down("Space");
-  await page.waitForFunction(() => window.__birdGame.flightState.flapEnergy < 5);
-  await page.waitForTimeout(400);
+  // Wait on the speed itself, not the clock: slow test machines run fewer physics steps per second.
+  await page.waitForFunction((target) => window.__birdGame.flightState.forwardSpeed > target, before.forwardSpeed + 8, { timeout: 10000 });
+  const during = await page.evaluate(() => window.__birdGame.flightState);
+  await expect(page.locator("#flight-status")).toContainText("Flapping");
   await page.keyboard.up("Space");
-  expect(await page.evaluate(() => window.__birdGame.flightState.flapEnergy)).toBe(4);
-  expect(await page.evaluate(() => window.__birdGame.flightState.forwardSpeed)).toBeGreaterThan(initialSpeed);
-  for (let i = 1; i < 5; i++) {
-    await page.waitForFunction(() => window.__birdGame.flightState.flapCooldown === 0);
-    await page.keyboard.press("Space");
-    await page.waitForFunction(remaining => window.__birdGame.flightState.flapEnergy <= remaining, 4-i);
-  }
-  await expect(page.locator("#flap-status")).toContainText("Recovering");
-  await page.keyboard.press("Space");
-  expect(await page.evaluate(() => window.__birdGame.flightState.flapEnergy)).toBeLessThan(1);
+  expect(during.forwardSpeed).toBeGreaterThan(before.forwardSpeed + 8);
+  expect(during.position.y).toBeGreaterThan(before.position.y);
+  expect(during.stamina).toBeLessThan(1);
+  await expect(page.locator("#flap-status")).toContainText("Stamina");
+  await page.waitForFunction(() => window.__birdGame.flightState.stamina === 1, null, { timeout: 8000 });
   await page.evaluate(() => {
     const state = window.__birdGame.flightState;
     state.position = { x:0, y:32, z:80 }; state.heading = 0; state.pitchAngle = 0;
   });
   await page.waitForFunction(() => window.__birdGame.windStrength > 0.5);
-  await expect(page.locator("#flight-status")).toContainText("WIND STREAM");
+  await expect(page.locator("#flight-status")).toContainText("Wind boost");
   await page.screenshot({ path: "artifacts/wind-flight.png" });
-  await page.waitForFunction(() => window.__birdGame.flightState.flapRecovery === 0, null, { timeout: 12000 });
-  await expect(page.locator("#flap-status")).not.toContainText("Recovering");
   expect(errors).toEqual([]);
+});
+
+test("camera setup waits for the player to be in view, then counts down and flies", async ({ page }) => {
+  const errors = collectConsoleErrors(page);
+  await page.addInitScript(INJECT_FAKE_TRACKER);
+  await page.addInitScript(() => {
+    // Nobody in front of the camera until the test says so.
+    window.__bodyVisible = false;
+    const real = window.__BIRD_TEST_TRACKER.getLatestLandmarks;
+    window.__BIRD_TEST_TRACKER.getLatestLandmarks = () => (window.__bodyVisible ? real() : null);
+  });
+  await page.goto("/");
+  await expect(page.locator("#start-flight")).toHaveText("Camera setup");
+  await launch(page, { control: "motion" });
+  await expect(page.locator("#message")).toContainText("Step back");
+  await expect(page.locator("#preview-wrap")).toBeVisible();
+  await page.waitForTimeout(800);
+  expect(await page.evaluate(() => window.__birdGame.state)).toBe("CALIBRATING");
+  await page.evaluate(() => { window.__bodyVisible = true; });
+  await expect(page.locator("#message")).toContainText("Hold steady");
+  await page.waitForFunction(() => window.__birdGame.state === "FLYING", { timeout: 10000 });
+  await expect(page.locator("#preview-wrap")).toBeHidden();
+  // Walking out of frame is reported, and coming back clears it.
+  await page.evaluate(() => { window.__bodyVisible = false; });
+  await expect(page.locator("#tracking-status")).toContainText("Move back into view");
+  await page.evaluate(() => { window.__bodyVisible = true; });
+  await expect(page.locator("#tracking-status")).toContainText("Camera tracking");
+  expect(errors).toEqual([]);
+});
+
+test("the menu start button follows the controls choice", async ({ page }) => {
+  await page.goto("/");
+  await page.click("[data-control=keyboard]");
+  await expect(page.locator("#start-flight")).toHaveText("Start flying");
+  await page.click("[data-control=motion]");
+  await expect(page.locator("#start-flight")).toHaveText("Camera setup");
+});
+
+test("Esc freezes the flight and the race clock, and resumes where it left off", async ({ page }) => {
+  const errors = collectConsoleErrors(page);
+  await page.goto("/");
+  await launch(page, { mode: "trial" });
+  await page.waitForFunction(() => window.__birdGame.state === "FLYING");
+  await page.evaluate(() => {
+    const cp0 = window.__BIRD_CHECKPOINTS[0];
+    Object.assign(window.__birdGame.flightState.position, { x: cp0.x, y: cp0.y, z: cp0.z });
+  });
+  await page.waitForFunction(() => window.__birdGame.courseState?.status === "racing");
+
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#pause-menu")).toBeVisible();
+  await expect(page.locator("#pause-controls")).toContainText("Hold Space");
+  const seconds = async () => parseFloat(await page.locator("#timer").textContent());
+  const z = () => page.evaluate(() => window.__birdGame.flightState.position.z);
+  const pausedTime = await seconds();
+  const pausedZ = await z();
+  await page.waitForTimeout(1500);
+  expect(await seconds()).toBe(pausedTime);
+  expect(await z()).toBe(pausedZ);
+
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#pause-menu")).toBeHidden();
+  await page.waitForTimeout(300);
+  expect(await z()).toBeGreaterThan(pausedZ);
+  const resumedTime = await seconds();
+  expect(resumedTime).toBeGreaterThan(pausedTime);
+  expect(resumedTime).toBeLessThan(pausedTime + 1.2); // the 1.5s pause wasn't counted
+
+  // The on-screen buttons work too, and leave nothing focused for Space to press.
+  await page.click("#pause-button");
+  await page.click("#pause-resume");
+  await expect(page.locator("#pause-menu")).toBeHidden();
+  expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test("sky petals: collecting counts up, a full bloom opens the next, Time Trial has none", async ({ page }) => {
+  const errors = collectConsoleErrors(page);
+  await page.goto("/");
+  await launch(page);
+  await page.waitForFunction(() => window.__birdGame.state === "FLYING");
+  await expect(page.locator("#petal-counter")).toContainText("00/08");
+  await expect(page.locator("#petal-marker")).toBeVisible();
+  await expect(page.locator("#petal-distance")).toContainText(" m");
+
+  const flyTo = (i) => page.evaluate((i) => {
+    const petal = window.__birdGame.petalRun.petals[i];
+    Object.assign(window.__birdGame.flightState.position, { x: petal.x, y: petal.y, z: petal.z });
+  }, i);
+
+  await flyTo(0);
+  await expect(page.locator("#petal-count")).toHaveText("01/08");
+  expect(await page.evaluate(() => window.__birdGame.petalRun.petals[0].collected)).toBe(true);
+  await page.screenshot({ path: "artifacts/petal-pickup.png" });
+
+  for (let i = 1; i < 8; i++) {
+    await flyTo(i);
+    await expect(page.locator("#petal-count")).toHaveText(i === 7 ? "00/08" : `0${i + 1}/08`);
+  }
+  await expect(page.locator("#petal-toast")).toHaveText("Bloom 1 complete");
+  await expect(page.locator("#petal-label")).toContainText("Bloom 2");
+  expect(await page.evaluate(() => window.__birdGame.petalRun.bloom)).toBe(2);
+  expect(errors).toEqual([]);
+
+  await page.goto("/");
+  await launch(page, { mode: "trial" });
+  await page.waitForFunction(() => window.__birdGame.state === "FLYING");
+  await expect(page.locator("#petal-counter")).toBeHidden();
+  await expect(page.locator("#petal-marker")).toBeHidden();
 });
