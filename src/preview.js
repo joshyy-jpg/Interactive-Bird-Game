@@ -33,8 +33,11 @@ export function createPreview(canvas, video, getLandmarks) {
   }
 
   function drawSkeleton(landmarks, w, h) {
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = "rgba(74, 222, 128, 0.9)";
+    // The canvas is drawn at very different sizes (camera setup vs. in flight),
+    // so size strokes in on-screen pixels rather than canvas pixels.
+    const px = w / (canvas.clientWidth || w);
+    ctx.lineWidth = 2.5 * px;
+    ctx.strokeStyle = "rgba(249, 185, 59, 0.95)";
     for (const [a, b] of CONNECTIONS) {
       const la = landmarks[a];
       const lb = landmarks[b];
@@ -56,8 +59,8 @@ export function createPreview(canvas, video, getLandmarks) {
         continue;
       const p = point(lm, w, h);
       ctx.beginPath();
-      ctx.arc(p.x, p.y, KEY_POINTS.has(i) ? 4 : 2.5, 0, Math.PI * 2);
-      ctx.fillStyle = KEY_POINTS.has(i) ? "#facc15" : "rgba(74, 222, 128, 0.9)";
+      ctx.arc(p.x, p.y, (KEY_POINTS.has(i) ? 4.5 : 3) * px, 0, Math.PI * 2);
+      ctx.fillStyle = KEY_POINTS.has(i) ? "#f4efe1" : "rgba(249, 185, 59, 0.95)";
       ctx.fill();
     }
   }

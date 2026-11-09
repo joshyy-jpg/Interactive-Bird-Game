@@ -8,6 +8,7 @@ import {
   resetCourseState,
   elapsedSeconds,
   getCourseSafeZones,
+  shiftCourseStart,
 } from "../../src/course.js";
 
 test("a single crossing advances exactly one checkpoint, even if fed repeatedly", () => {
@@ -90,4 +91,19 @@ test("getCourseSafeZones covers every checkpoint with a wider, flat-target zone"
     assert.ok(zone.radius > CHECKPOINTS[i].radius);
     assert.equal(zone.radius, CHECKPOINTS[i].radius + COURSE_CONSTANTS.safeZoneMargin);
   });
+});
+
+test("time spent paused doesn't count against a running race", () => {
+  const racing = { ...createCourseState(), status: "racing", startTime: 100 };
+  const shifted = shiftCourseStart(racing, 30);
+  assert.equal(elapsedSeconds(racing, 140), 40);
+  assert.equal(elapsedSeconds(shifted, 170), 40);
+  assert.equal(racing.startTime, 100, "must not mutate the original state");
+});
+
+test("pausing before the race starts or after it ends changes nothing", () => {
+  const idle = createCourseState();
+  assert.equal(shiftCourseStart(idle, 30), idle);
+  const finished = { ...idle, status: "finished", startTime: 100, finishTime: 150 };
+  assert.equal(shiftCourseStart(finished, 30), finished);
 });

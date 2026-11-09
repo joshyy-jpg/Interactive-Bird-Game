@@ -4,7 +4,9 @@ export default defineConfig({
   testDir: "./tests/e2e",
   timeout: 30000,
   use: {
-    baseURL: "http://localhost:5173",
+    // 5174, not Vite's default 5173: another local project uses 5173, and
+    // reuseExistingServer would otherwise run these tests against the wrong app.
+    baseURL: "http://localhost:5174",
     launchOptions: {
       // Auto-grant the camera permission prompt and provide a fake webcam so
       // getUserMedia resolves headlessly.
@@ -15,8 +17,8 @@ export default defineConfig({
     },
   },
   webServer: {
-    command: "npm run dev",
-    url: "http://localhost:5173",
+    command: "npm run dev -- --port 5174 --strictPort",
+    url: "http://localhost:5174",
     reuseExistingServer: !process.env.CI,
     timeout: 60000,
   },

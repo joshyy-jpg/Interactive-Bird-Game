@@ -5,9 +5,11 @@ lean side to side to steer, and let your arms drop to dive — all tracked from 
 camera, no controller needed. Runs entirely in your browser.
 
 After calibrating, pick a mode:
-- **Free Roam** — fly anywhere over an endless, hilly landscape (mountains and
-  dips scattered here and there), no goal.
-- **Time Trial** — race through 8 checkpoint gates in order, against the clock.
+- **Free Roam** — fly anywhere over an endless sunset sea dotted with beach
+  islets, among floating sky islands with waterfalls, ruins and cherry trees.
+  Follow the gold marker to collect sky petals: finishing a set of 8 opens a
+  new one wherever you are.
+- **Time Trial** — race through 8 glowing gold rings in order, against the clock.
   Your best time is remembered on this computer.
 
 ## Controls
@@ -24,7 +26,8 @@ Keyboard while flying:
 | Key | Does |
 | --- | ---- |
 | **C** | Recalibrate — stand straight & still for a second (use this if the bird drifts/turns on its own) |
-| **H** | Hide / show the camera preview |
+| **H** | Hide / show the camera view |
+| **Esc** | Pause; also stops the Time Trial clock (lists all the controls) |
 
 ## Running it
 
@@ -76,8 +79,15 @@ If a control feels backwards or too sensitive, the knobs live in a few files:
   `FLIGHT_CONSTANTS` at the top of [`src/flight.js`](src/flight.js).
 - Body-tracking sensitivity (how hard you must lean/flap):
   `CONTROL_CONSTANTS` at the top of [`src/controls.js`](src/controls.js).
-- Terrain shape (how mountainous, how sparse): `TERRAIN_CONSTANTS` at the top
+- Terrain shape (how many islets, how tall): `TERRAIN_CONSTANTS` at the top
   of [`src/terrain.js`](src/terrain.js). Change `SEED` for a different world.
+  `SEABED_DROP` sets how far the land sits below the sea.
+- Floating islands (how many, how big, how high): `ISLAND_CONSTANTS` and the
+  island designs in [`src/islands.js`](src/islands.js).
+- Sky colours and sun position: `SKY_PALETTE` and `SUN_DIRECTION` in
+  [`src/sky.js`](src/sky.js).
+- Sky petals (how many, how close you must fly): `PETAL_CONSTANTS` at the top
+  of [`src/petals.js`](src/petals.js).
 - Time Trial course layout: `CHECKPOINTS` in [`src/course.js`](src/course.js).
 
 If leaning one way turns the bird the *opposite* way, flip `turnSignMultiplier`
@@ -104,48 +114,61 @@ npm run test:e2e  # browser smoke test (boots the app, checks it reaches "flying
 | `src/calibration.js` | The 3-second "hold still" baseline capture. |
 | `src/controls.js` | Turns body pose into turn/flap flight inputs. |
 | `src/flight.js` | The flight physics (how inputs move the bird). |
-| `src/terrain.js` | Deterministic, endless terrain height (mountains/dips). |
+| `src/terrain.js` | Deterministic, endless terrain height; sea level and seabed. |
+| `src/islands.js` | Where floating islands are, and bumping into them. |
+| `src/islandModels.js` | Builds and streams the floating islands' 3D models. |
+| `src/sky.js` / `src/sea.js` | Golden-hour sky and sun; the turquoise sea. |
 | `src/course.js` | The Time Trial checkpoint list, progress, and timer. |
-| `src/checkpoints.js` | The 3D checkpoint gate rings. |
+| `src/petals.js` / `src/petalModels.js` | Sky petal placement and collecting; their 3D models. |
+| `src/checkpoints.js` | The glowing gold checkpoint rings. |
 | `src/bird.js` | The bird's 3D shape and flapping wings. |
-| `src/scene.js` / `src/world.js` | Ground, sky, scenery, and the chase camera. |
+| `src/scene.js` / `src/world.js` | Lighting, seabed and islets, clouds, and the chase camera. |
 | `src/ui.js` | On-screen text, mode select, and the timer/results screens. |
 
 
 ## Wild / Wings visual update
 
-The launch screen now opens before any camera request. Choose a bald eagle,
-pigeon, or seagull to see its animated 3D preview, then choose Free Roam or
-Time Trial. Each bird has a distinct silhouette, plumage, beak, and layered
-flight feathers; flight physics are shared across characters.
+The launch screen opens before any camera request. Pick a bird to see its
+animated 3D preview, then choose Camera or Keyboard and Free Roam or Time Trial.
+Each bird has a distinct silhouette, plumage, beak, and layered flight feathers;
+flight physics are shared across characters.
 
-Keyboard controls are the default: arrow keys or WASD turn, climb, and dive.
-Select Body motion to use the existing camera tracking and calibration flow.
-The Change bird / Menu button restarts at the selection screen.
+Camera is the default. **Camera setup** shows a large mirrored view, waits until
+you're in frame, then counts down while you hold steady. Keyboard skips this:
+arrow keys or WASD turn, climb, and dive, and holding Space flaps.
 
-The environment features larger layered pines, clustered clouds, warm lighting,
-and a snow-capped mountain panorama. The distant peaks are scenic; ground
-collision still follows the procedural terrain. Trees remain visual scenery.
+In flight, **Pause [Esc]** freezes everything, including the race clock, and
+lists the controls. **Back to nest** returns to the menu.
+
+## Dreamflight look
+
+The world is a golden-hour sky over a turquoise sea. Floating islands with
+sandstone cliffs, waterfalls, ruined arches and columns, and cherry blossom
+trees fill the sky endlessly, the same every visit. Islands are solid: you can
+skim across their grass, but you slide off their rock instead of flying through
+it. Their undersides never hang lower than 48, so low flying (and the whole
+Time Trial course) is always clear. Trees and ruins are scenery you can fly
+through. Each bird's wings are built from layered feathers and bend at the
+wrist when flapping; the white dove is the default bird.
 
 
-## Momentum, flaps, and wind experiment
+## Flapping, climbing, and momentum
 
-- Dive to gain speed; pull up to spend momentum on altitude. A faster approach
-  carries you higher. Low-speed climbs ease toward level flight, and fast zoom
-  climbs can coast above the soft ceiling.
-- Keyboard: tap Space for one flap. Holding Space does not repeat strokes.
-- Camera: a quick raised-arm/downstroke cycle (120–650 ms) gives one speed
-  impulse. Hold arms high or low for 500 ms to climb or dive. Quick strokes
-  retain your prior pitch; keeping arms down afterward begins a dive.
-- Five flap charges. Each accepted stroke uses one charge, with at least
-  280 ms between strokes. Recharge starts after 1.5 seconds without a flap,
-  at one charge per second. Exhaustion blocks flapping for three seconds;
-  charges continue to recover. Wind and dives still work during cooldown.
-- Follow the translucent mint tunnels in the direction of their moving rings
-  and streaks. Boosts fade near the edges and depend on alignment. Momentum
-  persists after leaving. The first stream starts straight ahead of spawn.
-- The HUD displays airspeed, remaining charges, recovery countdown, and flight
-  state. Camera field of view widens slightly with speed.
+Flying is meant to be easy, with momentum as a bonus rather than a hurdle:
+
+- **Climbing always works.** Holding up (or raising your arms) climbs steadily,
+  even at low speed, and a slow bird eases back up to cruising speed.
+- **Flapping = speed and lift.** Hold Space, or flap your arms in any rhythm:
+  the bird speeds up and rises. Flap while climbing to gain speed going up.
+- **Diving = lots of speed.** A few seconds of diving reaches 45+ m/s, and
+  pulling out turns that speed into a big zoom climb.
+- **Stamina.** About 8 seconds of non-stop flapping empties the bar. Tired
+  flapping still works at 40% strength; glide for a moment and it refills in ~3s.
+- **Camera controls.** How much your wrists are moving sets flap strength, so
+  big, small, fast or slow flaps all count straight away. The average height of
+  your arms steers: above the shoulders climbs, held down by your sides dives.
+  Flapping with your arms low doesn't count as a dive.
+- Follow the translucent mint wind streams for a free boost.
 
 Tuning lives in `FLIGHT_CONSTANTS`, `CONTROL_CONSTANTS`, and `WIND_TEMPLATES`.
 All three birds currently share these settings. Time-trial records use a new

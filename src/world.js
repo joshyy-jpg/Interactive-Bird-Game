@@ -1,5 +1,8 @@
 import * as THREE from "three";
-import { heightAt } from "./terrain.js";
+import { landHeightAt, SEA_LEVEL } from "./terrain.js";
+import { createSkyDome } from "./sky.js";
+import { createSea } from "./sea.js";
+import { createIslandField } from "./islandModels.js";
 
 // The world is "infinite" by recycling: the ground is one grid mesh that
 // recenters under the bird in large steps (see groundRebuildThreshold below),
@@ -19,9 +22,10 @@ export const WORLD_CONSTANTS = {
   featureHalfRange: 650, // trees/rocks live within this distance of the bird
   treeCount: 550,
   rockCount: 80,
-  cloudCount: 40,
+  cloudCount: 24,
+  lowCloudCount: 8,
   cloudHalfRange: 1000,
-  skyRadius: 1900,
+  skyRadius: 2400,
 };
 
 /**
@@ -34,93 +38,48 @@ export function wrapAround(coord, center, half) {
   return coord - Math.floor((coord - center + half) / range) * range;
 }
 
-function createGrassTexture(renderer) {
-  const size = 1024;
-  const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext("2d");
-
-  ctx.fillStyle = "#708361";
-  ctx.fillRect(0, 0, size, size);
-
-  // Low-contrast mottling; strong shapes would make the tiling repeat obvious.
-  const greens = ["#6b9c4a", "#8cbb67", "#749f52", "#86b25f"];
-  for (let i = 0; i < 1600; i++) {
-    ctx.globalAlpha = 0.1;
-    ctx.fillStyle = greens[(Math.random() * greens.length) | 0];
-    ctx.beginPath();
-    ctx.arc(Math.random() * size, Math.random() * size, 6 + Math.random() * 22, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  for (let i = 0; i < 8; i++) {
-    ctx.globalAlpha = 0.22;
-    ctx.fillStyle = "#9b855c";
-    ctx.beginPath();
-    ctx.ellipse(
-      Math.random() * size,
-      Math.random() * size,
-      15 + Math.random() * 35,
-      10 + Math.random() * 25,
-      Math.random() * Math.PI,
-      0,
-      Math.PI * 2
-    );
-    ctx.fill();
-  }
-  ctx.globalAlpha = 1;
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.RepeatWrapping;
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
-  // UVs are now computed in world-space (see buildGroundGeometry), spanning
-  // many tile repeats directly, so the texture's own .repeat stays at 1x1.
-  return texture;
-}
-
-function createCloudTexture() {
+// Painted clouds: a crisp flat-bottomed silhouette shaded from warm white to a
+// pink underside, rather than a soft airbrushed blur. Colour and shape are two
+// separate images: a single image with transparency filters its see-through
+// pixels (which are black) into a dark fringe around each cloud.
+function createCloudTextures() {
   const size = 512;
-  const canvas = document.createElement("canvas");
-  canvas.width = size; canvas.height = size;
-  const ctx = canvas.getContext("2d");
-  for (let i = 0; i < 22; i++) {
-    const x = 80 + Math.random() * 350, y = 235 + Math.random() * 90;
-    const r = 35 + Math.random() * 65;
-    const gradient = ctx.createRadialGradient(x, y, r * 0.3, x, y, r);
-    gradient.addColorStop(0, "rgba(255,251,237,0.85)");
-    gradient.addColorStop(0.65, "rgba(230,237,235,0.45)");
-    gradient.addColorStop(1, "rgba(213,230,234,0)");
-    ctx.fillStyle = gradient; ctx.fillRect(x-r,y-r,r*2,r*2);
-  }
-  return new THREE.CanvasTexture(canvas);
-}
+  const base = 330;
+  const newCanvas = () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    return canvas;
+  };
 
-function createSkyDome() {
-  const geometry = new THREE.SphereGeometry(WORLD_CONSTANTS.skyRadius, 20, 14);
-  const zenith = new THREE.Color(0x3479a5);
-  const horizon = new THREE.Color(0xcbdedc);
-  const positions = geometry.attributes.position;
-  const colors = new Float32Array(positions.count * 3);
-  const c = new THREE.Color();
-  for (let i = 0; i < positions.count; i++) {
-    const t = Math.max(positions.getY(i) / WORLD_CONSTANTS.skyRadius, 0);
-    c.copy(horizon).lerp(zenith, Math.pow(t, 0.7));
-    colors[i * 3] = c.r;
-    colors[i * 3 + 1] = c.g;
-    colors[i * 3 + 2] = c.b;
+  const shape = newCanvas();
+  const shapeCtx = shape.getContext("2d");
+  shapeCtx.fillStyle = "#000";
+  shapeCtx.fillRect(0, 0, size, size);
+  shapeCtx.beginPath();
+  shapeCtx.rect(0, 0, size, base);
+  shapeCtx.clip();
+  shapeCtx.fillStyle = "#fff";
+  for (let i = 0; i < 15; i++) {
+    const t = i / 14;
+    const swell = Math.sin(t * Math.PI);
+    shapeCtx.beginPath();
+    shapeCtx.arc(56 + t * 400, base - 18 - Math.random() * 74 * swell, 20 + swell * (30 + Math.random() * 34), 0, Math.PI * 2);
+    shapeCtx.fill();
   }
-  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-  const material = new THREE.MeshBasicMaterial({
-    vertexColors: true,
-    side: THREE.BackSide,
-    fog: false, // the dome IS the far distance; fogging it would blank it out
-    depthWrite: false,
-  });
-  const dome = new THREE.Mesh(geometry, material);
-  dome.renderOrder = -1;
-  return dome;
+
+  const paint = newCanvas();
+  const paintCtx = paint.getContext("2d");
+  const shade = paintCtx.createLinearGradient(0, base - 150, 0, base);
+  shade.addColorStop(0, "#fffaf2");
+  shade.addColorStop(0.55, "#fdeae6");
+  shade.addColorStop(1, "#f6c3d2");
+  paintCtx.fillStyle = shade;
+  paintCtx.fillRect(0, 0, size, size);
+
+  const map = new THREE.CanvasTexture(paint);
+  map.colorSpace = THREE.SRGBColorSpace;
+  return { map, alphaMap: new THREE.CanvasTexture(shape) };
 }
 
 // Scatters per-instance placement data (fixed world coords that get wrapped).
@@ -137,9 +96,31 @@ function scatterPlacements(count, half, scaleMin, scaleMax) {
   return placements;
 }
 
+// Ground colours by height relative to the sea: deep teal seabed, pale sand
+// shallows and beaches, green islet tops, warm rock on steep slopes.
+const GROUND_COLORS = {
+  deep: new THREE.Color(0x2f9aa3),
+  shallow: new THREE.Color(0xbfe6cf),
+  sand: new THREE.Color(0xf6e2b8),
+  grass: new THREE.Color(0x94c96a),
+  grassHigh: new THREE.Color(0x7db35a),
+  rock: new THREE.Color(0xd2a483),
+};
+
+function groundColor(height, steepness, target) {
+  const C = GROUND_COLORS;
+  if (height < SEA_LEVEL - 0.4) {
+    const depth = Math.min((SEA_LEVEL - height) / 6, 1);
+    return target.copy(C.shallow).lerp(C.deep, Math.pow(depth, 0.7));
+  }
+  if (height < SEA_LEVEL + 1.6) return target.copy(C.sand);
+  target.copy(C.grass).lerp(C.grassHigh, Math.min((height - 1.6) / 25, 1));
+  if (steepness > 0.32) target.lerp(C.rock, Math.min((steepness - 0.32) * 3, 1));
+  return target;
+}
+
 // Builds a fresh ground mesh geometry centered at (centerX, centerZ), with
-// vertex heights sampled from the terrain and UVs computed in world-space so
-// the grass texture tiles consistently no matter where the grid is centered.
+// vertex heights sampled from the terrain and coloured by height and slope.
 function buildGroundGeometry(centerX, centerZ, safeZones) {
   const W = WORLD_CONSTANTS;
   const geometry = new THREE.PlaneGeometry(
@@ -149,18 +130,23 @@ function buildGroundGeometry(centerX, centerZ, safeZones) {
     W.groundSegments
   );
   geometry.rotateX(-Math.PI / 2);
+  geometry.deleteAttribute("uv");
 
   const position = geometry.attributes.position;
-  const uv = geometry.attributes.uv;
   for (let i = 0; i < position.count; i++) {
     const worldX = position.getX(i) + centerX;
     const worldZ = position.getZ(i) + centerZ;
-    position.setY(i, heightAt(worldX, worldZ, safeZones));
-    uv.setXY(i, worldX / W.groundTileSize, worldZ / W.groundTileSize);
+    position.setY(i, landHeightAt(worldX, worldZ, safeZones));
   }
   position.needsUpdate = true;
-  uv.needsUpdate = true;
   geometry.computeVertexNormals();
+  const normal = geometry.attributes.normal;
+  const colors = new Float32Array(position.count * 3);
+  const color = new THREE.Color();
+  for (let i = 0; i < position.count; i++) {
+    groundColor(position.getY(i), 1 - normal.getY(i), color).toArray(colors, i * 3);
+  }
+  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
   return geometry;
 }
 
@@ -173,68 +159,51 @@ function buildGroundGeometry(centerX, centerZ, safeZones) {
 export function createWorld(scene, renderer) {
   const W = WORLD_CONSTANTS;
 
-  // --- Ground ---
+  // --- Ground (seabed and islets) ---
   const groundMaterial = new THREE.MeshStandardMaterial({
-    map: createGrassTexture(renderer),
+    vertexColors: true,
+    flatShading: true,
     roughness: 1,
   });
   const ground = new THREE.Mesh(buildGroundGeometry(0, 0, []), groundMaterial);
   scene.add(ground);
   let lastGroundCenter = { x: 0, z: 0 };
 
-  // --- Sky dome ---
-  const sky = createSkyDome();
+  // --- Sky, sea and floating islands ---
+  const sky = createSkyDome(W.skyRadius);
   scene.add(sky);
+  const sea = createSea(scene, renderer);
+  const islands = createIslandField(scene);
 
-  const mountains = new THREE.Group();
-  const mountainGeo = new THREE.ConeGeometry(1, 1, 17, 9);
-  const mp = mountainGeo.attributes.position;
-  for (let i = 0; i < mp.count; i++) {
-    const y = mp.getY(i);
-    const ripple = 1 + 0.24 * Math.sin(mp.getX(i) * 21 + mp.getZ(i) * 15 + y * 12);
-    mp.setX(i, mp.getX(i) * ripple); mp.setZ(i, mp.getZ(i) * ripple);
-  }
-  mountainGeo.computeVertexNormals();
-  const mountainColors = new Float32Array(mp.count * 3);
-  for (let i = 0; i < mp.count; i++) {
-    const snowLine = 0.18 + Math.sin(mp.getX(i)*25 + mp.getZ(i)*17)*0.06;
-    const color = new THREE.Color(mp.getY(i) > snowLine ? 0xe3e7df : mp.getY(i) > -0.15 ? 0x78888a : 0x506f66);
-    color.toArray(mountainColors, i*3);
-  }
-  mountainGeo.setAttribute("color", new THREE.BufferAttribute(mountainColors,3));
-  const mountainMat = new THREE.MeshStandardMaterial({ vertexColors:true, roughness:1 });
-  for (let i = 0; i < 30; i++) {
-    const angle = i / 30 * Math.PI * 2;
-    const peak = new THREE.Mesh(mountainGeo,mountainMat);
-    const height = 180 + (Math.sin(i*7.3)*0.5+0.5)*230;
-    peak.scale.set(180 + (i%4)*45,height,170 + (i%3)*45);
-    peak.position.set(Math.cos(angle)*1450,height/2-35,Math.sin(angle)*1450);
-    peak.rotation.y = i*2.4; mountains.add(peak);
-  }
-  scene.add(mountains);
-  const sun = new THREE.Sprite(new THREE.SpriteMaterial({map:createCloudTexture(),color:0xffecc1,transparent:true,opacity:0.45,depthWrite:false,fog:false}));
-  sun.scale.set(460,460,1); scene.add(sun);
-
-  // --- Trees: trunk + canopy instanced meshes sharing the same transforms ---
-  const treePlacements = scatterPlacements(W.treeCount, W.featureHalfRange, 5.0, 11.0);
-  const trunkGeo = new THREE.CylinderGeometry(0.12, 0.18, 1.0, 6);
-  trunkGeo.translate(0, 0.5, 0);
-  const canopyGeo = new THREE.ConeGeometry(0.9, 2.0, 7);
-  canopyGeo.translate(0, 1.9, 0);
+  // --- Islet trees: cherry blossoms and leafy trees, only where there's dry land ---
+  const treePlacements = scatterPlacements(W.treeCount, W.featureHalfRange, 1.4, 2.6);
+  const trunkGeo = new THREE.CylinderGeometry(0.22, 0.34, 3.2, 6);
+  trunkGeo.translate(0, 1.6, 0);
+  const canopyGeo = new THREE.IcosahedronGeometry(1.9, 0);
+  canopyGeo.scale(1, 0.8, 1);
+  canopyGeo.translate(0, 3.9, 0);
   const trunks = new THREE.InstancedMesh(
     trunkGeo,
-    new THREE.MeshStandardMaterial({ color: 0x7a5230 }),
+    new THREE.MeshStandardMaterial({ color: 0x6e4a3c, flatShading: true }),
     W.treeCount
   );
   const canopies = new THREE.InstancedMesh(
     canopyGeo,
-    new THREE.MeshStandardMaterial({ color: 0x284e3e }),
+    new THREE.MeshStandardMaterial({ color: 0xffffff, flatShading: true, roughness: 0.9 }),
     W.treeCount
   );
-
-  const upperCanopies = new THREE.InstancedMesh(canopyGeo.clone(), new THREE.MeshStandardMaterial({ color: 0x365e46 }), W.treeCount);
-  upperCanopies.geometry.scale(0.75, 0.85, 0.75);
-  upperCanopies.geometry.translate(0, 0.9, 0);
+  const upperCanopies = new THREE.InstancedMesh(
+    canopyGeo.clone().scale(0.68, 0.7, 0.68).translate(0.5, 2.0, -0.3),
+    canopies.material,
+    W.treeCount
+  );
+  const treeTints = [0xf8b4cc, 0xf39dbb, 0xffcfe0, 0x86c066, 0x6fae58];
+  const tint = new THREE.Color();
+  treePlacements.forEach((p, i) => {
+    tint.setHex(treeTints[i % treeTints.length]);
+    canopies.setColorAt(i, tint);
+    upperCanopies.setColorAt(i, tint.multiplyScalar(1.06));
+  });
 
   // --- Rocks ---
   const rockPlacements = scatterPlacements(W.rockCount, W.featureHalfRange, 0.5, 1.4);
@@ -242,7 +211,7 @@ export function createWorld(scene, renderer) {
   rockGeo.translate(0, 0.3, 0);
   const rocks = new THREE.InstancedMesh(
     rockGeo,
-    new THREE.MeshStandardMaterial({ color: 0x8d8d8d, roughness: 1 }),
+    new THREE.MeshStandardMaterial({ color: 0xd8b48f, roughness: 1, flatShading: true }),
     W.rockCount
   );
 
@@ -254,22 +223,31 @@ export function createWorld(scene, renderer) {
   }
 
   // --- Clouds ---
-  const cloudMaterial = new THREE.SpriteMaterial({
-    map: createCloudTexture(),
-    transparent: true,
-    depthWrite: false,
-    opacity: 0.9,
+  const cloudMaterials = [0, 1, 2].map(
+    () =>
+      new THREE.SpriteMaterial({
+        ...createCloudTextures(),
+        transparent: true,
+        depthWrite: false,
+        opacity: 0.94,
+      })
+  );
+  const lowCloudMaterials = cloudMaterials.map((material) => {
+    const low = material.clone();
+    low.opacity = 0.78;
+    return low;
   });
   const clouds = [];
-  for (let i = 0; i < W.cloudCount; i++) {
-    const sprite = new THREE.Sprite(cloudMaterial);
-    const scale = 95 + Math.random() * 120;
-    sprite.scale.set(scale, scale * 0.6, 1);
+  for (let i = 0; i < W.cloudCount + W.lowCloudCount; i++) {
+    const low = i >= W.cloudCount;
+    const sprite = new THREE.Sprite((low ? lowCloudMaterials : cloudMaterials)[i % 3]);
+    const scale = low ? 140 + Math.random() * 160 : 95 + Math.random() * 120;
+    sprite.scale.set(scale, scale * (low ? 0.4 : 0.6), 1);
     clouds.push({
       sprite,
       x: (Math.random() - 0.5) * 2 * W.cloudHalfRange,
       z: (Math.random() - 0.5) * 2 * W.cloudHalfRange,
-      y: 160 + Math.random() * 180,
+      y: low ? 45 + Math.random() * 70 : 170 + Math.random() * 190,
     });
     scene.add(sprite);
   }
@@ -280,14 +258,17 @@ export function createWorld(scene, renderer) {
   const _pos = new THREE.Vector3();
   const _scl = new THREE.Vector3();
 
-  function placeInstances(mesh, placements, center, safeZones, squashY = 1) {
+  // `minHeight`/`maxHeight` limit where a feature may stand (relative to the
+  // sea), e.g. trees only on dry islet ground; elsewhere it's hidden (scale 0).
+  function placeInstances(mesh, placements, center, safeZones, squashY = 1, minHeight = SEA_LEVEL + 1.8, maxHeight = Infinity) {
     for (let i = 0; i < placements.length; i++) {
       const p = placements[i];
       const worldX = wrapAround(p.x, center.x, WORLD_CONSTANTS.featureHalfRange);
       const worldZ = wrapAround(p.z, center.z, WORLD_CONSTANTS.featureHalfRange);
-      _pos.set(worldX, heightAt(worldX, worldZ, safeZones), worldZ);
+      const height = landHeightAt(worldX, worldZ, safeZones);
+      _pos.set(worldX, height, worldZ);
       _quat.setFromAxisAngle(_axisY, p.rotY);
-      const clear = safeZones.some(zone => Math.hypot(worldX-zone.x,worldZ-zone.z) < Math.min(zone.radius, 28));
+      const clear = height < minHeight || height > maxHeight;
       const scale = clear ? 0 : p.scale;
       _scl.set(scale, scale * squashY, scale);
       _matrix.compose(_pos, _quat, _scl);
@@ -326,14 +307,15 @@ export function createWorld(scene, renderer) {
       lastGroundCenter = { x: center.x, z: center.z };
     }
 
+    const time = performance.now() / 1000;
     sky.position.set(center.x, center.y, center.z);
-    mountains.position.set(center.x, 0, center.z);
-    sun.position.set(center.x - 500, 620, center.z + 1050);
+    sea.update(center, time);
+    islands.update(center, time);
 
     placeInstances(trunks, treePlacements, center, safeZones);
     placeInstances(canopies, treePlacements, center, safeZones);
     placeInstances(upperCanopies, treePlacements, center, safeZones);
-    placeInstances(rocks, rockPlacements, center, safeZones, 0.6);
+    placeInstances(rocks, rockPlacements, center, safeZones, 0.6, SEA_LEVEL - 0.5, SEA_LEVEL + 2.5);
 
     for (const cloud of clouds) {
       cloud.sprite.position.set(
@@ -345,5 +327,5 @@ export function createWorld(scene, renderer) {
   }
 
   update({ x: 0, y: 30, z: 0 });
-  return { update };
+  return { update, islandCount: islands.count };
 }

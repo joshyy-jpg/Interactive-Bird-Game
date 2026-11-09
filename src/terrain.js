@@ -167,3 +167,21 @@ export const SPAWN_SAFE_ZONE = {
   radius: TERRAIN_CONSTANTS.spawnSafeRadius,
   targetHeight: 0,
 };
+
+// --- Sea world ("Dreamflight" look) ---
+// The whole landscape sits SEABED_DROP below the sea, so the gentle base noise
+// becomes a sandy seabed, small peaks become shallow lagoons and reefs, and the
+// bigger peaks rise out of the water as beach islets. Safe zones (spawn,
+// checkpoints) end up as flat seabed, so the flight floor there is the sea surface.
+export const SEA_LEVEL = 0;
+export const SEABED_DROP = 6;
+
+/** Height of the land or seabed at (x, z); below SEA_LEVEL means underwater. */
+export function landHeightAt(x, z, safeZones = []) {
+  return heightAt(x, z, safeZones) - SEABED_DROP;
+}
+
+/** What the bird can't fly below: the land, or the sea surface over water. */
+export function surfaceHeightAt(x, z, safeZones = []) {
+  return Math.max(landHeightAt(x, z, safeZones), SEA_LEVEL);
+}
