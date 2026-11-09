@@ -28,7 +28,9 @@ function makeFrame(leanTilt = 0) {
   return frame;
 }
 
-function flyWithLean(leanTilt, steps = 240) {
+// 1.5 seconds: long enough to drift clearly, short enough that even a full turn
+// hasn't curved the bird back past its starting line (which would flip the sign).
+function flyWithLean(leanTilt, steps = 90) {
   const baseline = computeCalibrationBaseline([makeFrame(), makeFrame(), makeFrame()]);
   const controlsState = createControlsState();
   let flightState = createInitialFlightState();

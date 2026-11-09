@@ -236,7 +236,7 @@ async function main() {
   app.state = STATE.FLYING;
   // One short tip at a time; the full control list is on the pause screen.
   const tips = motion
-    ? ["\u2039  Lean to steer  \u203a", "Flap your arms to rise", "Hold your arms up to climb", "Arms still at your sides to dive"]
+    ? ["\u2039  Lean to steer  \u203a", "Or tip your arms like wings", "Flap your arms to rise", "Hold your arms up to climb", "Arms still at your sides to dive"]
     : ["\u2039  \u2190 \u2192 to steer  \u203a", "Hold Space to flap and rise", "\u2191 climb  \u00b7  \u2193 dive"];
   if (mode === "timeTrial") tips.push("Fly through the gold rings");
   else tips.push("Follow the gold marker to sky petals");

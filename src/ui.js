@@ -104,7 +104,7 @@ export function selectMode() {
 export function showPause(motion) {
   const rows = motion
     ? [
-        ["Steer", "Lean left or right"],
+        ["Steer", "Lean, or tip your arms"],
         ["Speed up and rise", "Flap your arms"],
         ["Climb", "Hold your arms up"],
         ["Dive", "Arms still at your sides"],

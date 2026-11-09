@@ -20,6 +20,7 @@ After calibrating, pick a mode:
 | Lower your arms        | Dive ⬇️ (and speed up) |
 | Lean / tilt left       | Bank & turn left ↩️ |
 | Lean / tilt right      | Bank & turn right ↪️ |
+| Tip your arms like wings (right hand lower = right) | Also turns; works without leaning |
 
 Keyboard while flying:
 

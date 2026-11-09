@@ -218,3 +218,79 @@ test("a tracking gap fades flapping out, and reappearing doesn't count as a flap
   const back = drive(() => 0.15, 0.3, { state, baseline, start: 2 });
   assert.ok(Math.max(...back.outputs.map((o) => o.flapInput)) < 0.2);
 });
+
+// A player with arms held out: `left`/`right` are wrist heights above the
+// shoulders in torso lengths (torso = 0.3 of the image).
+function wingFrame({ lean = 0, left = 0, right = 0, wristVisibility = 1 } = {}) {
+  const frame = makeFrame({ shoulderTilt: 0.2 * Math.tan(lean) });
+  frame[LANDMARK.LEFT_WRIST] = { x: 0.1, y: 0.4 - left * 0.3, visibility: wristVisibility };
+  frame[LANDMARK.RIGHT_WRIST] = { x: 0.9, y: 0.4 - right * 0.3, visibility: wristVisibility };
+  return frame;
+}
+const degrees = (d) => (d * Math.PI) / 180;
+
+test("a comfortable lean is enough: about 17 degrees is a full turn", () => {
+  const baseline = neutralBaseline();
+  const at = (d) => settle(wingFrame({ lean: degrees(d) }), baseline, createControlsState(), 90).turnInput;
+  assert.ok(at(12) > 0.6, `12deg gave ${at(12)}`);
+  assert.ok(at(17) > 0.97, `17deg gave ${at(17)}`);
+  assert.ok(at(5) < at(12), "bigger leans should turn harder");
+});
+
+test("leaning still steers when the hands are out of the camera's view", () => {
+  const baseline = neutralBaseline();
+  const state = createControlsState();
+  settle(wingFrame({ right: 0.6, left: 0.6 }), baseline, state, 60);
+  const climbBefore = state.lastClimbInput;
+  const out = settle(wingFrame({ lean: degrees(14), wristVisibility: 0.1 }), baseline, state, 60);
+  assert.ok(out.turnInput > 0.7, `turn ${out.turnInput}`);
+  assert.equal(out.climbInput, climbBefore, "climb holds while the arms can't be seen");
+});
+
+test("hands reappearing after leaving the frame isn't read as a flap", () => {
+  const baseline = neutralBaseline();
+  const state = createControlsState();
+  settle(wingFrame({ left: 0.5, right: 0.5, wristVisibility: 0.1 }), baseline, state, 30);
+  const out = computeControlInputs(wingFrame({ left: -0.5, right: -0.5 }), baseline, state, 1 / 60, 0);
+  assert.equal(out.flapInput, 0);
+});
+
+test("tipping the arms steers without leaning, the same way as leaning", () => {
+  const baseline = neutralBaseline();
+  const right = settle(wingFrame({ left: 0.45, right: -0.45 }), baseline, createControlsState(), 90);
+  const left = settle(wingFrame({ left: -0.45, right: 0.45 }), baseline, createControlsState(), 90);
+  assert.ok(right.turnInput > 0.95, `right hand low gave ${right.turnInput}`);
+  assert.ok(left.turnInput < -0.95, `left hand low gave ${left.turnInput}`);
+  const lean = settle(wingFrame({ lean: degrees(14) }), baseline, createControlsState(), 90);
+  assert.ok(lean.turnInput > 0, "lean right and right hand low must agree");
+});
+
+test("tipping the arms is not read as flapping and doesn't change climb", () => {
+  const baseline = neutralBaseline();
+  const state = createControlsState();
+  const dt = 1 / 60;
+  let peakFlap = 0;
+  let out;
+  for (let i = 0; i < 90; i++) {
+    const tip = 0.45 * Math.min(i / 30, 1); // tipped over half a second
+    out = computeControlInputs(wingFrame({ left: tip, right: -tip }), baseline, state, dt, i * 16);
+    peakFlap = Math.max(peakFlap, out.flapInput);
+  }
+  assert.equal(peakFlap, 0);
+  assert.equal(out.climbInput, 0);
+});
+
+test("flapping straight doesn't steer, even with one arm lagging the other", () => {
+  const baseline = neutralBaseline();
+  for (const lag of [0, 0.04, 0.08]) {
+    const state = createControlsState();
+    const dt = 1 / 60;
+    let peak = 0;
+    for (let i = 0; i < 360; i++) {
+      const t = i * dt;
+      const frame = wingFrame({ left: 0.6 * Math.sin(4 * Math.PI * t), right: 0.6 * Math.sin(4 * Math.PI * (t - lag)) });
+      peak = Math.max(peak, Math.abs(computeControlInputs(frame, baseline, state, dt, t * 1000).turnInput));
+    }
+    assert.ok(peak < 0.05, `lag ${lag}s steered with peak ${peak}`);
+  }
+});

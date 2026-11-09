@@ -7,7 +7,9 @@
 //
 //   flapInput:  0 (arms still) .. 1 (flapping hard)
 //
-// Turning comes from body lean (shoulder-line tilt). Climb/dive comes from the
+// Turning comes from body lean (shoulder-line tilt) or from tipping your arms
+// like wings, whichever is stronger. Lean only needs your shoulders in view, so
+// steering keeps working when your hands leave the frame. Climb/dive comes from the
 // AVERAGE height of your arms (arms up = climb, arms down = dive), smoothed so
 // the up-and-down of a flap doesn't make the bird bob. Flapping is measured as
 // how much your wrists are moving, so any steady flapping counts at once, with
@@ -30,11 +32,16 @@ export const CONTROL_CONSTANTS = {
   // --- Turning (body lean) ---
   // Flip to -1 if webcam mirroring makes leaning right steer left in testing.
   turnSignMultiplier: 1,
-  turnDeadzoneRad: 0.07, // ~4deg neutral zone: no turn until you lean past this
-  maxTurnAngleRad: 0.5, // additional lean beyond the deadzone that = full turn
+  turnDeadzoneRad: 0.055, // ~3deg neutral zone: no turn until you lean past this
+  maxTurnAngleRad: 0.24, // additional lean beyond the deadzone that = full turn (~17deg in all)
   // Exponential smoothing rates (per second), so control feel is identical on
   // 60Hz and 120Hz displays. Lower = smoother/slower.
   turnSmoothingRate: 12,
+  // Tipping the arms: left wrist height minus right, in torso lengths. Smoothed
+  // twice so two arms that don't flap perfectly in step don't steer the bird.
+  wingTiltDeadzone: 0.2,
+  wingTiltRange: 0.7, // tilt beyond the deadzone that = full turn
+  wingTiltSmoothingRate: 8,
 
   // --- Climb / dive (arm height RELATIVE TO SHOULDERS) ---
   // armHeight is 0 when wrists are level with the shoulders (arms out like
@@ -54,6 +61,8 @@ export const CONTROL_CONSTANTS = {
 export function createControlsState() {
   return {
     turnInput: 0,
+    wingStage1: 0, // first and second smoothing passes of the arm tilt
+    wingStage2: 0,
     hasArm: false,
     armStage1: 0, // first and second smoothing passes of the arm height
     armStage2: 0,
@@ -174,35 +183,49 @@ export function computeCalibrationBaseline(landmarkFrames) {
 export function computeControlInputs(landmarks, baseline, state, dt, nowMs) { // eslint-disable-line no-unused-vars
   const c = CONTROL_CONSTANTS;
 
-  const requiredIndices = [
-    LANDMARK.LEFT_SHOULDER,
-    LANDMARK.RIGHT_SHOULDER,
-    LANDMARK.LEFT_WRIST,
-    LANDMARK.RIGHT_WRIST,
-  ];
-  const tracked =
-    !!landmarks && requiredIndices.every((i) => landmarkVisible(landmarks, i));
+  const shouldersSeen =
+    !!landmarks &&
+    landmarkVisible(landmarks, LANDMARK.LEFT_SHOULDER) &&
+    landmarkVisible(landmarks, LANDMARK.RIGHT_SHOULDER);
 
-  if (!tracked || !baseline) {
+  if (!shouldersSeen || !baseline) {
     // Hold steering through a tracking gap, but let flapping fade out, and
     // forget the wrists so reappearing doesn't count as a huge arm movement.
-    state.hasWrists = false;
-    state.flapMotion *= Math.exp(-c.flapMotionRate * dt);
-    state.lastFlapInput = flapFromMotion(state.flapMotion, c);
+    forgetWrists(state, c, dt);
     return { turnInput: state.turnInput, climbInput: state.lastClimbInput, flapInput: state.lastFlapInput };
   }
 
   const ls = landmarks[LANDMARK.LEFT_SHOULDER];
   const rs = landmarks[LANDMARK.RIGHT_SHOULDER];
-  const lw = landmarks[LANDMARK.LEFT_WRIST];
-  const rw = landmarks[LANDMARK.RIGHT_WRIST];
+  const wristsSeen =
+    landmarkVisible(landmarks, LANDMARK.LEFT_WRIST) && landmarkVisible(landmarks, LANDMARK.RIGHT_WRIST);
 
-  // --- Turn: shoulder-line tilt through a deadzone, then smoothed. ---
+  // --- Turn: the stronger of body lean and arm tilt, then smoothed. ---
   const shoulderAngle = shoulderTilt(ls, rs);
   const angleDelta = (shoulderAngle - baseline.neutralShoulderAngle) * c.turnSignMultiplier;
-  const rawTurn = deadzoneMap(angleDelta, c.turnDeadzoneRad, c.maxTurnAngleRad);
+  const leanTurn = deadzoneMap(angleDelta, c.turnDeadzoneRad, c.maxTurnAngleRad);
+  let wingTurn = 0;
+  if (wristsSeen) {
+    // Image y grows downward, so a lower right wrist makes this positive: a right turn.
+    const tilt =
+      ((landmarks[LANDMARK.RIGHT_WRIST].y - landmarks[LANDMARK.LEFT_WRIST].y) / baseline.scale) * c.turnSignMultiplier;
+    const tiltT = 1 - Math.exp(-c.wingTiltSmoothingRate * dt);
+    state.wingStage1 += (tilt - state.wingStage1) * tiltT;
+    state.wingStage2 += (state.wingStage1 - state.wingStage2) * tiltT;
+    wingTurn = deadzoneMap(state.wingStage2, c.wingTiltDeadzone, c.wingTiltRange);
+  }
+  const rawTurn = Math.abs(wingTurn) > Math.abs(leanTurn) ? wingTurn : leanTurn;
   state.turnInput += (rawTurn - state.turnInput) * (1 - Math.exp(-c.turnSmoothingRate * dt));
   const turnInput = state.turnInput;
+
+  if (!wristsSeen) {
+    // Arms out past the edge of the camera: keep steering, hold climb/dive, fade flapping.
+    forgetWrists(state, c, dt);
+    return { turnInput, climbInput: state.lastClimbInput, flapInput: state.lastFlapInput };
+  }
+
+  const lw = landmarks[LANDMARK.LEFT_WRIST];
+  const rw = landmarks[LANDMARK.RIGHT_WRIST];
 
   // Wrist heights relative to the SHOULDERS, in torso lengths (image y grows downward).
   const shoulderMidY = (ls.y + rs.y) / 2;
@@ -218,7 +241,13 @@ export function computeControlInputs(landmarks, baseline, state, dt, nowMs) { //
   const wristT = 1 - Math.exp(-c.wristSmoothingRate * dt);
   const nextLeft = state.leftWrist + (leftHeight - state.leftWrist) * wristT;
   const nextRight = state.rightWrist + (rightHeight - state.rightWrist) * wristT;
-  const speed = dt > 0 ? (Math.abs(nextLeft - state.leftWrist) + Math.abs(nextRight - state.rightWrist)) / 2 / dt : 0;
+  // Arms moving together is a flap. Arms moving opposite ways is mostly tipping
+  // the wings to steer, so it counts for much less.
+  const leftMove = nextLeft - state.leftWrist;
+  const rightMove = nextRight - state.rightWrist;
+  const armsTogether = Math.abs(leftMove + rightMove) / 2;
+  const armsOpposed = Math.abs(leftMove - rightMove) / 2;
+  const speed = dt > 0 ? (armsTogether + 0.35 * armsOpposed) / dt : 0;
   state.leftWrist = nextLeft;
   state.rightWrist = nextRight;
   state.flapMotion += (speed - state.flapMotion) * (1 - Math.exp(-c.flapMotionRate * dt));
@@ -241,6 +270,14 @@ export function computeControlInputs(landmarks, baseline, state, dt, nowMs) { //
   state.lastClimbInput = climbInput;
   state.lastFlapInput = flapInput;
   return { turnInput, climbInput, flapInput };
+}
+
+function forgetWrists(state, c, dt) {
+  state.hasWrists = false;
+  // Arm tilt ramps back up from zero, so hands reappearing mid-flap can't jerk the bird.
+  state.wingStage1 = state.wingStage2 = 0;
+  state.flapMotion *= Math.exp(-c.flapMotionRate * dt);
+  state.lastFlapInput = flapFromMotion(state.flapMotion, c);
 }
 
 function flapFromMotion(motion, c) {
